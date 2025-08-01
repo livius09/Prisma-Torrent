@@ -1,0 +1,1 @@
+space_alocated(in MB) = 100
