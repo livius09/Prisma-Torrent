@@ -8,13 +8,23 @@ class N_file():
     def __init__(self) -> None:
         self.name=""
         self.spread=1
-        self.prio=3
         self.size_kb=0
         self.own_hash = None
         
 
 ownfiles:list[N_file]=[]
-size_left_kb=0
+size_left_kb = 0
+
+with open("./data/config.json") as confile:
+    text = confile.read()
+
+setings = json.loads(text)
+print(setings)
+
+for keys, val in setings.items():
+    print(f"{keys}: {val}")
+
+exit()
 
 PORT = 50000
 BROADCAST_IP = "255.255.255.255"
