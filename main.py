@@ -3,6 +3,8 @@ import hashlib
 import json
 import threading
 import os
+import time 
+import schedule     #needs a pip install 
 
 class N_file():
     def __init__(self) -> None:
@@ -12,120 +14,217 @@ class N_file():
         self.own_hash = None
         
 
-ownfiles:list[N_file]=[]
-size_left_kb = 0
+ownfiles:dict[str,N_file] = {}
 
-with open("./data/config.json") as confile:
-    text = confile.read()
 
-setings = json.loads(text)
-print(setings)
+alocated_size = 0   #in bytes
+used_size = 0       #in bytes
+size_left = 0       #in bytes
 
-for keys, val in setings.items():
-    print(f"{keys}: {val}")
+hosts_up= 0
+settings= {}
 
-exit()
+
 
 PORT = 50000
 BROADCAST_IP = "255.255.255.255"
 
-ssock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-ssock.bind(('', PORT))  # Listen on all interfaces
-
 
 def listener():
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    recv_sock.bind(("", PORT))
+    recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     print(f"Listening on {PORT}...")
+    
     while True:
         #data, addr = recv_sock.recvfrom(1024)
         #recv_sock.sendto(b"", addr)
 
         data, addr = recv_sock.recvfrom(1024)
 
-        datarr = data.decode().lower().split(",",2)
+        datarr = data.decode().split(",",2)
 
-        match datarr[0]:
+        print(f"got data: {datarr}")
+
+        match int(datarr[0]):
+
             case 1:
                 #ping
                 #reply whit 1
                 recv_sock.sendto(b"1", addr)
 
-
-                pass
             case 2:
                 #file exists
                 #look for the filename in ownfiles and if we have it reply whit 1
-                for i in range(len(ownfiles)):
-                    if ownfiles[i].name == datarr[1]:
-                        recv_sock.sendto(b"1", addr)
-                        break
+
+                if datarr[1] in ownfiles.keys():
+                    recv_sock.sendto(b"1", addr)
 
             case 3:
                 #list of files
                 #send ownfiles
                 
-                file_list_text = json.dumps(ownfiles)
-                recv_sock.sendto(file_list_text.encode(), addr)
+                recv_sock.sendto(json.dumps(ownfiles).encode(), addr)
 
             case 4:
-                #upload
+                #download
                 #reply whit 1 if we can safe it and then when the uploader replies we go to downloading the file
+
+
                 pass
             case 5:
                 #delet network wide
                 #if we have the file delet it and remove
                 #ahh yes very good idea but idk how to auth that
                 del_file = datarr[1]
-                for file in ownfiles:
-                    if file.name == del_file:
-                        try:
-                            os.remove(f"data/{del_file}")
 
-                            ownfiles.remove(file)
+                if del_file in ownfiles.keys():
+                    try:
+                        os.remove(f"files/{del_file}")
 
-                        except:
-                            print(f"failed to delet file: {del_file}")
-                        break
+                        ownfiles.pop(del_file)
+
+                    except:
+                        print(f"failed to delet file: {del_file}")
 
             case 6:
                 #recive dowload conformation
                 dow_file = datarr[1]
-                for file in ownfiles:
-                    if file.name == del_file:
-                        file.spread+=1
-                        break
 
-
-                        
-
+                if dow_file in ownfiles.keys():
+                    ownfiles[dow_file].spread+=1
+                
 
             case 7:
                 #hash request
                 #if we have the file we hash and send it
 
                 file_to_hash = datarr[1]
-                for search_file in ownfiles:
-                    if search_file.name == file_to_hash:
+
+                if file_to_hash in ownfiles.keys():
+                    try:
                         with open(f"data/{file_to_hash}","r") as raw_file:
                             file_content = raw_file.read()
 
                         recv_sock.sendto(hashlib.sha256(file_content.encode()).hexdigest().encode(), addr)
-                        break
-                        
+                    except Exception as e:
+                        print(f"failed to open or send hash: {e}")
+
+def start_up(se_sock:socket.socket) -> None:
+
+
+    with open("./data/config.json") as confile:
+        text = confile.read()
+
+    setings = json.loads(text)
+    print("settings:")
+    for keys, val in setings.items():
+        print(f"{keys}: {val}")
+
+    with open("./data/varstore.json") as varfile:
+        vartext = varfile.read()
+
+    varstore :dict[str,N_file]= json.loads(vartext)
+
+    global used_size, size_left
+
+    # get size
+    for ele in os.scandir("./files"):
+        used_size+=os.stat(ele).st_size
+
+    print("folder size: ",end="")
+    print(used_size)
+
+    size_left = alocated_size - used_size
+
+
+    hosts_up= 0
+    other_up= False
+
+    se_sock.settimeout(1)
+    se_sock.sendto(b"1", (BROADCAST_IP, PORT))
+
+    try:
+        while True:
+            data, addr = se_sock.recvfrom(1024)
+            hosts_up+= 1
+    except socket.timeout:
+        print(f"Done collecting responses: {hosts_up}")
+    
+    if hosts_up  < 1:
+        print("no other host are up.\nonly listening pasevly")
+    else:
+        other_up = True     
+
+    if varstore !={}:
+        print("varstore:")
+        for file in varstore.values():
+            print(f"{file.name}")
+    else:
+        if other_up:
+            otherlist :list[dict[str,N_file]]= []
+
+            se_sock.sendto(b"3", (BROADCAST_IP, PORT))
+
+            try:
+                while True:
+                    data, addr = se_sock.recvfrom(1024)
+                    otherlist.append(json.loads(data.decode()))
+                    
+
+            except socket.timeout:
+                print(f"Done Fetching File lists:")
+
+            for dicta in otherlist:
+                varstore.update(dicta)      #kinda ok solution  #replace whit something that will also detect problems/diferences
+            
+            for file in varstore.values():
+                print(f"{file.name}")
+    
+            
+        else:
+            print(f"no others are up to fetch file list from defaulting to {{}}")
+
+
+
+def test_job():
+    print("working") 
+    
+
+def treadscheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(2)
+
+
 
 
 # Start listener thread
 threading.Thread(target=listener, daemon=True).start()
+threading.Thread(target=treadscheduler, daemon=True).start()
+
+
+
+
 
 # Send broadcasts
 send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+print(f"sending on {PORT}")
 
-while True:
-    send_sock.sendto(b"helo", (BROADCAST_IP, PORT))
-    print("Broadcast sent.")
+start_up(send_sock)
 
-            
+schedule.every(10).seconds.do(test_job)
 
 
+print("shell:")
+while True: #comand line like thingy
+    line = input(">").strip().split(" ")
+    op= line[0]
+
+    match op:
+        case "":
+            pass
+        case "ls":
+            print('files in the files folder:')
+            for file in os.listdir("./files"):
+                print(file)
