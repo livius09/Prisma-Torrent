@@ -3,7 +3,7 @@ import hashlib
 import json
 import threading
 import os
-import time 
+import time
 import schedule     #needs a pip install 
 from datetime import datetime, timedelta
 
@@ -69,9 +69,11 @@ def listener():
 
         global used_size, size_left, any_up, hosts_up
 
-        data, addr = recv_sock.recvfrom(1024)
+        sock, addr = recv_sock.accept()
 
-        datarr = data.decode().split(",",2)
+        datate = sock.recv(1024)
+
+        datarr = datate.decode().split(",",2)
 
         print(f"got data: {datarr}")
 
@@ -80,7 +82,7 @@ def listener():
             case 1:
                 #ping
                 #reply whit 1
-                recv_sock.sendto(b"1", addr)
+                recv_sock.sendall(b"1")
                 any_up= True
 
             case 2:
@@ -88,13 +90,13 @@ def listener():
                 #look for the file_idame in ownfiles and if we have it reply whit 1
 
                 if datarr[1] in ownfiles.keys():
-                    recv_sock.sendto(b"1", addr)
+                    recv_sock.sendall(b"1")
 
             case 3:
                 #list of files
                 #send ownfiles
                 
-                recv_sock.sendto(json.dumps(ownfiles).encode(), addr)
+                recv_sock.sendall(json.dumps(ownfiles).encode())
 
             case 4:
                 #download
@@ -102,7 +104,57 @@ def listener():
                 fsize= int(datarr[2])
                 file_id=datarr[1]
                 if file_id not in ownfiles.keys() and size_left > fsize:
-                    recv_sock.sendto(b"1", addr)
+                    recv_sock.send(b"1")
+
+                    serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+                    serv.bind(("0.0.0.0",50055))
+
+                    serv.listen(1)
+
+                    sock, serv_addr = serv.accept()
+
+
+                    datarr: list[str] = sock.recv(1024).decode().split(",",2)
+
+                    rec_file_name: str = datarr[0]
+                    filesize :int= int(datarr[1])
+
+
+                    recived = 0
+                    dat=""
+                    with open(f"files/{rec_file_name}","ab") as file:
+
+                        while recived != filesize:
+                            
+                            try:
+                                dat = sock.recv(min(1024,filesize-recived))
+                            except:
+                                break
+                            if not dat:
+                                break
+                            file.write(dat)
+                            recived+= len(dat)
+
+                    ownfiles[rec_file_name] = N_file()
+
+                    ownfiles[rec_file_name].own_hash = hashlib.sha256(file_content).hexdigest()  # type: ignore
+
+                    ownfiles[rec_file_name].size_b= os.stat(f"files/{rec_file_name}").st_size
+
+                    sock.settimeout(1)
+                    sock.sendto(f"2,{file_id}".encode(), (BROADCAST_IP, PORT))
+
+                    try:
+                        while True:
+                            if b"1"==sock.recv(10):
+                                ownfiles[rec_file_name].spread+= 1
+
+                    except socket.timeout:
+                        pass
+
+
+
 
                     #open up a listening TCP socket and the other one should start sending the file
 
@@ -208,22 +260,24 @@ def index(se_sock:socket.socket):
         ownfiles[file_id].name= file_id
         
         with open(f"files/{file_id}","rb") as raw_file:
-            file_content = raw_file.read()
+            file_content: bytes = raw_file.read()
 
-        ownfiles[file_id].own_hash= hashlib.sha256(file_content).hexdigest() # type: ignore
+        ownfiles[file_id].own_hash = hashlib.sha256(file_content).hexdigest()  # type: ignore
 
         se_sock.settimeout(1)
         se_sock.sendto(f"2,{file_id}".encode(), (BROADCAST_IP, PORT))
 
         try:
             while True:
-                data, addr = se_sock.recvfrom(10)
+                data, acaddr = se_sock.recvfrom(10)
                 if data==b"1":
                    ownfiles[file_id].spread+= 1
 
         except socket.timeout:
             pass
+
         ownfiles[file_id].size_b= os.stat(f"files/{file_id}").st_size
+
     print("\nindexed:")
 
 def test_job():
@@ -239,7 +293,7 @@ def any_up_check(se_sock:socket.socket) -> None:
 
     try:
         while True:
-            data, addr = se_sock.recvfrom(10)
+            data, acaddr = se_sock.recvfrom(10)
             if data==b"1":
                 hosts_up+= 1
 
@@ -310,7 +364,7 @@ try:
 
                 try:
                     while True:
-                        data, addr = send_sock.recvfrom(1024)
+                        data, caaddr = send_sock.recvfrom(1024)
                         otherlist.append(json.loads(data.decode()))
                         
 

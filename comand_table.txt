@@ -4,7 +4,7 @@ data    parameter   funtion:
 2.      filename            checks if anybody has a specific filename host only replys if the have it
 3.      -                   get a list of files from all of the host merges all recived files into one list on startup
 3.      filename            (directed) copy a file from a specific host
-4.      filename, size       upload request host only respond if they are wiling and have enoug space out of all the ansering host 3 are picked (if avible) and the files are sent
+4.      filename, size      upload request host only respond if they are wiling and have enoug space out of all the ansering host 3 are picked (if avible) and the files are sent
 5.      filename            remove all instances of a fille from all devices allso removes it from the arr
 6.      filename            loaded a file increases the x/3 counter on all host,    download conformation
 7.      filename            request the hash from of a file from all the devices only those who have it reply whit it if they there has to be a 50% consensis then downloads the file from one of the 50% 
